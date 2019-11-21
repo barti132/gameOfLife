@@ -4,17 +4,22 @@
 const gchar* path;
 double cycle = 0.2;
 int width = 120, height = 80;
-static char** map = NULL;
+gboolean status = FALSE;
+char** map = NULL;
+GtkWidget *drawingArea;
 
-static void checkConditions(GtkWidget*, GtkWidget*);
-static void getPath_callback(GtkWidget*, GtkFileChooser*);
-static void on_changed(GtkComboBox*, gpointer);
-static gboolean on_draw_event(GtkWidget*, cairo_t*, gpointer);
-static void activate(GtkApplication*, gpointer);
-static void readMap(FILE*);
-void freeMap();
+void checkConditions(GtkButton *);
+void getPath_callback(GtkWidget*, GtkFileChooser*);
+void on_changed(GtkComboBox*, gpointer);
+gboolean on_draw_event(GtkWidget*, cairo_t*, gpointer);
+void activate(GtkApplication*, gpointer);
+void readMap(FILE*);
+void freeMap(char**);
+char** initMap();
+int countNeighbours(int, int);
 
-static void initMap(){
+char** initMap(){
+    char** map = NULL;
     if(map == NULL){
         map = malloc(sizeof(char*) * width);
         for(int i = 0; i < width; i++){
@@ -27,9 +32,10 @@ static void initMap(){
             map[i][j] = '.';
         }
     }
+    return map;
 }
 
-static void readMap(FILE* file){
+void readMap(FILE* file){
     fseek (file, 0, SEEK_END);
     int size = ftell (file);
     fseek (file, 0, SEEK_SET);
@@ -52,21 +58,79 @@ static void readMap(FILE* file){
     }
 }
 
-static void checkConditions(GtkWidget *widget, GtkWidget *button){
-    if(path != NULL && cycle != 0){
+int countNeighbours(int x,int y){
+    int neighbours = 0;
+
+    for(int i = x - 1; i <= x + 1; i++){
+        for(int j = y - 1; j <= y + 1; j++){
+            if(i < 0 || j < 0 || i >= width || j >= height || (i == x && j == y)){
+                continue;
+            }
+
+            if(map[j][i] == '#'){
+                neighbours++;
+            }
+        }
+    }
+
+    return neighbours;
+}
+
+char** nextMap(){
+    char** newMap = initMap();
+
+    for(int i = 0; i < width; i++){
+        for(int j = 0; j < height; j++){
+            int tmp = countNeighbours(i, j);
+
+            if(tmp == 3 && map[j][i] == '.') {
+                newMap[j][i] = '#';
+            }
+            else if(tmp == 2 || tmp == 3 && map[j][i] == '#'){
+                newMap[j][i] = '#';
+            }
+        }
+    }
+
+    return newMap;
+}
+
+gboolean simulation(gpointer button){
+    if(status) {
+        gtk_widget_queue_draw_area(drawingArea, 0, 0, gtk_widget_get_allocated_width(drawingArea),
+                                   gtk_widget_get_allocated_height(drawingArea));
+
+        char** newMap = nextMap();
+        if(newMap != NULL){
+            free(map);
+            map = newMap;
+        }
+
+        return TRUE;
+    }
+    return FALSE;
+}
+
+void checkConditions(GtkButton *button){
+    if(path != NULL && cycle != 0 && !status){
         FILE *file = fopen(path, "r");
         if(!file==NULL){
-            initMap();
+            map = initMap();
             readMap(file);
+            status = TRUE;
+            g_timeout_add (cycle * 1000, simulation, (gpointer *) button);
         }
         else{
             g_print("Error: reading new file");
         }
 
     }
+    else{
+        status = FALSE;
+    }
 }
 
-void freeMap(){
+void freeMap(char** map){
     if(map != NULL) {
         for (int i = 0; i < width; i++) {
             free(map[i]);
@@ -75,11 +139,11 @@ void freeMap(){
     }
 }
 
-static void getPath_callback(GtkWidget *widget, GtkFileChooser *chooser){
+void getPath_callback(GtkWidget *widget, GtkFileChooser *chooser){
     path = gtk_file_chooser_get_filename(widget);
 }
 
-static void on_changed(GtkComboBox *widget, gpointer user_data){
+void on_changed(GtkComboBox *widget, gpointer user_data){
     GtkComboBox *combo_box = widget;
 
     if (gtk_combo_box_get_active (combo_box) != 0) {
@@ -87,7 +151,7 @@ static void on_changed(GtkComboBox *widget, gpointer user_data){
     }
 }
 
-static gboolean on_draw_event(GtkWidget *widget, cairo_t *cr, gpointer user_data){
+gboolean on_draw_event(GtkWidget *widget, cairo_t *cr, gpointer user_data){
     GtkWidget *win = gtk_widget_get_toplevel(widget);
 
     cairo_set_source_rgb(cr, 0, 0, 0);
@@ -110,13 +174,13 @@ static gboolean on_draw_event(GtkWidget *widget, cairo_t *cr, gpointer user_data
     return FALSE;
 }
 
-static void activate(GtkApplication* app, gpointer user_data){
+void activate(GtkApplication* app, gpointer user_data){
     GtkWidget *window;
     GtkWidget *vbox, *hbox1;
     GtkWidget *chooseButton;
     GtkWidget *startButton;
     GtkWidget *comboBox;
-    GtkWidget *drawingArea;
+    GtkWidget *label;
 
 
     window = gtk_application_window_new (app);
@@ -149,6 +213,10 @@ static void activate(GtkApplication* app, gpointer user_data){
     g_signal_connect(startButton, "clicked", G_CALLBACK(checkConditions), NULL);
     gtk_box_pack_start(GTK_BOX(hbox1), startButton, FALSE, FALSE, 5);
 
+    label = gtk_label_new("Number of gen: 0");
+    gtk_box_pack_start(GTK_BOX(hbox1), label, FALSE, FALSE, 5);
+
+
     drawingArea = gtk_drawing_area_new();
     gtk_box_pack_start(GTK_BOX(vbox), drawingArea, TRUE, TRUE, 5);
     g_signal_connect(drawingArea, "draw", G_CALLBACK(on_draw_event), NULL);
@@ -165,6 +233,6 @@ int main (int argc, char **argv){
     status = g_application_run (G_APPLICATION (app), argc, argv);
     g_object_unref (app);
 
-    freeMap();
+    freeMap(map);
     return status;
 }
