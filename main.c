@@ -4,7 +4,7 @@
 const gchar* path;
 const gchar* oldPath = NULL;
 double cycle = 0.1;
-int width = 126, height = 86, generation = 0;
+int width = 126, height = 86, generation = -1, loopID;
 gboolean status = FALSE;
 char** map = NULL;
 GtkWidget *drawingArea, *label;
@@ -15,7 +15,8 @@ int countNeighbours(int, int);
 char** nextMap();
 void oneStep();
 gboolean simulation();
-void checkConditions();
+void reloadMap();
+void play();
 void freeMap(char**);
 void getPath_callback(GtkWidget*, GtkFileChooser*);
 void on_changed(GtkComboBox*, gpointer);
@@ -100,14 +101,6 @@ char** nextMap(){
     return newMap;
 }
 
-void oneStep(){
-    if(status == FALSE && map != NULL && path == oldPath){
-        status = TRUE;
-        simulation();
-        status = FALSE;
-    }
-}
-
 gboolean simulation(){
     if(status) {
         char* string = g_strdup_printf ("Number of gen: %i", ++generation);
@@ -127,26 +120,33 @@ gboolean simulation(){
     return FALSE;
 }
 
-void checkConditions(){
-    if(path != NULL && cycle != 0){
-        if((map == NULL || path != oldPath) && status == FALSE){
-            oldPath = path;
-            generation = 0;
-            FILE *file = fopen(path, "r");
-            if(!file==NULL){
-                map = initMap();
-                readMap(file);
-                status = TRUE;
-                g_timeout_add (cycle * 1000, simulation, NULL);
-            }
-            else{
-                g_print("Error: reading new file");
-            }
+void reloadMap(){
+    oldPath = path;
+    generation = -1;
+    FILE *file = fopen(path, "r");
+    if(!file==NULL) {
+        map = initMap();
+        readMap(file);
+    }
+    else{
+        g_print("Error: reading new file");
+    }
+}
+
+void oneStep(){
+    if(path != NULL) {
+        if (status == FALSE) {
+            status = TRUE;
+            simulation();
+            status = FALSE;
         }
-        else{
-            status = !status;
-            g_timeout_add (cycle * 1000, simulation, NULL);
-        }
+    }
+}
+
+void play(){
+    if(path != NULL){
+        status = !status;
+        loopID = g_timeout_add (cycle * 1000, simulation, NULL);
     }
 }
 
@@ -161,6 +161,8 @@ void freeMap(char** map){
 
 void getPath_callback(GtkWidget *widget, GtkFileChooser *chooser){
     path = gtk_file_chooser_get_filename(widget);
+    reloadMap();
+    oneStep();
 }
 
 void on_changed(GtkComboBox *widget, gpointer user_data){
@@ -226,7 +228,7 @@ void activate(GtkApplication* app, gpointer user_data){
     gtk_box_pack_start(GTK_BOX(hbox1), comboBox, FALSE, FALSE, 5);
 
     startButton = gtk_button_new_with_label("Start");
-    g_signal_connect(startButton, "clicked", G_CALLBACK(checkConditions), NULL);
+    g_signal_connect(startButton, "clicked", G_CALLBACK(play), NULL);
     gtk_box_pack_start(GTK_BOX(hbox1), startButton, FALSE, FALSE, 5);
 
     oneStepButton = gtk_button_new_with_label("One step");
