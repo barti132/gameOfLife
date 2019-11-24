@@ -2,33 +2,38 @@
 #include <stdio.h>
 
 const gchar* path;
-double cycle = 0.2;
-int width = 120, height = 80;
+const gchar* oldPath = NULL;
+double cycle = 0.1;
+int width = 126, height = 86, generation = 0;
 gboolean status = FALSE;
 char** map = NULL;
-GtkWidget *drawingArea;
+GtkWidget *drawingArea, *label;
 
-void checkConditions(GtkButton *);
+char** initMap();
+void readMap(FILE*);
+int countNeighbours(int, int);
+char** nextMap();
+void oneStep();
+gboolean simulation();
+void checkConditions();
+void freeMap(char**);
 void getPath_callback(GtkWidget*, GtkFileChooser*);
 void on_changed(GtkComboBox*, gpointer);
 gboolean on_draw_event(GtkWidget*, cairo_t*, gpointer);
 void activate(GtkApplication*, gpointer);
-void readMap(FILE*);
-void freeMap(char**);
-char** initMap();
-int countNeighbours(int, int);
+
 
 char** initMap(){
     char** map = NULL;
     if(map == NULL){
-        map = malloc(sizeof(char*) * width);
-        for(int i = 0; i < width; i++){
-            map[i] = malloc(sizeof(char) * height);
+        map = malloc(sizeof(char*) * height);
+        for(int i = 0; i < height; i++){
+            map[i] = malloc(sizeof(char) * width);
         }
     }
 
-    for(int i = 0; i < width; i++){
-        for(int j = 0; j < height; j++){
+    for(int i = 0; i < height; i++){
+        for(int j = 0; j < width; j++){
             map[i][j] = '.';
         }
     }
@@ -63,11 +68,11 @@ int countNeighbours(int x,int y){
 
     for(int i = x - 1; i <= x + 1; i++){
         for(int j = y - 1; j <= y + 1; j++){
-            if(i < 0 || j < 0 || i >= width || j >= height || (i == x && j == y)){
+            if(i < 0 || j < 0 || i >= height || j >= width || (i == x && j == y)){
                 continue;
             }
 
-            if(map[j][i] == '#'){
+            if(map[i][j] == '#'){
                 neighbours++;
             }
         }
@@ -79,15 +84,15 @@ int countNeighbours(int x,int y){
 char** nextMap(){
     char** newMap = initMap();
 
-    for(int i = 0; i < width; i++){
-        for(int j = 0; j < height; j++){
+    for(int i = 0; i < height; i++){
+        for(int j = 0; j < width; j++){
             int tmp = countNeighbours(i, j);
 
-            if(tmp == 3 && map[j][i] == '.') {
-                newMap[j][i] = '#';
+            if(tmp == 3 && map[i][j] == '.') {
+                newMap[i][j] = '#';
             }
-            else if(tmp == 2 || tmp == 3 && map[j][i] == '#'){
-                newMap[j][i] = '#';
+            else if((tmp == 2 || tmp == 3) && map[i][j] == '#'){
+                newMap[i][j] = '#';
             }
         }
     }
@@ -95,8 +100,19 @@ char** nextMap(){
     return newMap;
 }
 
-gboolean simulation(gpointer button){
+void oneStep(){
+    if(status == FALSE && map != NULL && path == oldPath){
+        status = TRUE;
+        simulation();
+        status = FALSE;
+    }
+}
+
+gboolean simulation(){
     if(status) {
+        char* string = g_strdup_printf ("Number of gen: %i", ++generation);
+        gtk_label_set_text(label, string);
+        g_free(string);
         gtk_widget_queue_draw_area(drawingArea, 0, 0, gtk_widget_get_allocated_width(drawingArea),
                                    gtk_widget_get_allocated_height(drawingArea));
 
@@ -111,28 +127,32 @@ gboolean simulation(gpointer button){
     return FALSE;
 }
 
-void checkConditions(GtkButton *button){
-    if(path != NULL && cycle != 0 && !status){
-        FILE *file = fopen(path, "r");
-        if(!file==NULL){
-            map = initMap();
-            readMap(file);
-            status = TRUE;
-            g_timeout_add (cycle * 1000, simulation, (gpointer *) button);
+void checkConditions(){
+    if(path != NULL && cycle != 0){
+        if((map == NULL || path != oldPath) && status == FALSE){
+            oldPath = path;
+            generation = 0;
+            FILE *file = fopen(path, "r");
+            if(!file==NULL){
+                map = initMap();
+                readMap(file);
+                status = TRUE;
+                g_timeout_add (cycle * 1000, simulation, NULL);
+            }
+            else{
+                g_print("Error: reading new file");
+            }
         }
         else{
-            g_print("Error: reading new file");
+            status = !status;
+            g_timeout_add (cycle * 1000, simulation, NULL);
         }
-
-    }
-    else{
-        status = FALSE;
     }
 }
 
 void freeMap(char** map){
     if(map != NULL) {
-        for (int i = 0; i < width; i++) {
+        for (int i = 0; i < height; i++) {
             free(map[i]);
         }
         free(map);
@@ -144,11 +164,7 @@ void getPath_callback(GtkWidget *widget, GtkFileChooser *chooser){
 }
 
 void on_changed(GtkComboBox *widget, gpointer user_data){
-    GtkComboBox *combo_box = widget;
-
-    if (gtk_combo_box_get_active (combo_box) != 0) {
-        cycle = atof(gtk_combo_box_text_get_active_text (GTK_COMBO_BOX_TEXT(combo_box)));
-    }
+    cycle = atof(gtk_combo_box_text_get_active_text (GTK_COMBO_BOX_TEXT(widget)));
 }
 
 gboolean on_draw_event(GtkWidget *widget, cairo_t *cr, gpointer user_data){
@@ -157,13 +173,13 @@ gboolean on_draw_event(GtkWidget *widget, cairo_t *cr, gpointer user_data){
     cairo_set_source_rgb(cr, 0, 0, 0);
     cairo_paint(cr);
     if(map != NULL) {
-        for (int i = 0, x = 0; i < width; i++, x += 8) {
-            for (int j = 0, y = 0; j < height; j++, y += 8) {
+        for (int i = 3, y = 24; i < height - 3; i++, y += 8) {
+            for (int j = 3, x = 24; j < width -  3; j++, x += 8) {
                 if (map[i][j] == '#') {
                     cairo_set_line_width(cr, 1);
                     cairo_set_source_rgb(cr, 1.f, 0.f, 0.f);
 
-                    cairo_rectangle(cr, y, x, 8, 8);
+                    cairo_rectangle(cr, x, y, 8, 8);
                     cairo_stroke_preserve(cr);
                     cairo_set_source_rgb(cr, 0.f, 1.f, 0.f);
                     cairo_fill(cr);
@@ -179,13 +195,13 @@ void activate(GtkApplication* app, gpointer user_data){
     GtkWidget *vbox, *hbox1;
     GtkWidget *chooseButton;
     GtkWidget *startButton;
+    GtkWidget *oneStepButton;
     GtkWidget *comboBox;
-    GtkWidget *label;
-
 
     window = gtk_application_window_new (app);
     gtk_window_set_title (GTK_WINDOW (window), "Game of life");
     gtk_window_set_default_size (GTK_WINDOW (window), 960, 700);
+    gtk_window_set_resizable(window, FALSE);
 
     vbox = gtk_vbox_new(FALSE, 0);
     gtk_container_add(GTK_CONTAINER(window), vbox);
@@ -213,9 +229,12 @@ void activate(GtkApplication* app, gpointer user_data){
     g_signal_connect(startButton, "clicked", G_CALLBACK(checkConditions), NULL);
     gtk_box_pack_start(GTK_BOX(hbox1), startButton, FALSE, FALSE, 5);
 
+    oneStepButton = gtk_button_new_with_label("One step");
+    g_signal_connect(oneStepButton, "clicked", G_CALLBACK(oneStep), NULL);
+    gtk_box_pack_start(GTK_BOX(hbox1), oneStepButton, FALSE, FALSE, 5);
+
     label = gtk_label_new("Number of gen: 0");
     gtk_box_pack_start(GTK_BOX(hbox1), label, FALSE, FALSE, 5);
-
 
     drawingArea = gtk_drawing_area_new();
     gtk_box_pack_start(GTK_BOX(vbox), drawingArea, TRUE, TRUE, 5);
