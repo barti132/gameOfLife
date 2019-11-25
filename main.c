@@ -24,12 +24,11 @@ void activate(GtkApplication*, gpointer);
 
 char** initMap(){
     char** map = NULL;
-    if(map == NULL){
-        map = malloc(sizeof(char*) * height);
-        for(int i = 0; i < height; i++){
-            map[i] = malloc(sizeof(char) * width);
-        }
+    map = malloc(sizeof(char*) * height);
+    for(int i = 0; i < height; i++){
+        map[i] = malloc(sizeof(char) * width);
     }
+
 
     for(int i = 0; i < height; i++){
         for(int j = 0; j < width; j++){
@@ -122,6 +121,7 @@ gboolean simulation(){
 }
 
 void reloadMap(){
+    freeMap(map);
     generation = -1;
     FILE *file = fopen(path, "r");
     if(!file==NULL) {
@@ -158,7 +158,8 @@ void freeMap(char** map){
 void getPath_callback(GtkWidget *widget, GtkFileChooser *chooser){
     path = gtk_file_chooser_get_filename(widget);
     reloadMap();
-    simulation();
+    gtk_widget_queue_draw_area(drawingArea, 0, 0, gtk_widget_get_allocated_width(drawingArea),
+                               gtk_widget_get_allocated_height(drawingArea));
 }
 
 void on_changed(GtkComboBox *widget, gpointer user_data){
@@ -166,7 +167,6 @@ void on_changed(GtkComboBox *widget, gpointer user_data){
 }
 
 gboolean on_draw_event(GtkWidget *widget, cairo_t *cr, gpointer user_data){
-    GtkWidget *win = gtk_widget_get_toplevel(widget);
 
     cairo_set_source_rgb(cr, 0, 0, 0);
     cairo_paint(cr);
